@@ -1,0 +1,59 @@
+name: Build installable APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import original source on first build
+        shell: bash
+        run: |
+          if [ ! -f settings.gradle.kts ]; then
+            python3 - <<'PY'
+          import pathlib, zipfile
+          root = pathlib.Path.cwd()
+          with zipfile.ZipFile('ZaloPollRankAndroid_v1.3_auto_send_source.zip') as archive:
+              for entry in archive.infolist():
+                  if entry.is_dir():
+                      continue
+                  relative = pathlib.PurePosixPath(entry.filename).relative_to('ZaloPollRankAndroid_v1.3')
+                  if relative.parts[0] == '.github':
+                      continue
+                  target = (root / str(relative)).resolve()
+                  if not target.is_relative_to(root):
+                      raise ValueError('Unsafe archive path')
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(archive.read(entry))
+          PY
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add .
+            git commit -m 'Extract Zalo Poll Rank v1.3 Android source'
+            git push origin HEAD:main
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build debug APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZaloPollRank-install
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
